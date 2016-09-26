@@ -78,6 +78,7 @@ mpf:
         i2c_servo_controller: mpf.platforms.i2c_servo_controller.HardwarePlatform
         openpixel: mpf.platforms.openpixel.HardwarePlatform
         opp: mpf.platforms.opp.opp.HardwarePlatform
+        jr: mpf.platforms.jr.HardwarePlatform
         p_roc:  mpf.platforms.p_roc.HardwarePlatform
         p3_roc:  mpf.platforms.p3_roc.HardwarePlatform
         pololu_maestro: mpf.platforms.pololu_maestro.HardwarePlatform
@@ -165,6 +166,9 @@ p_roc:
     lamp_matrix_strobe_time: 100ms
     watchdog_time: 1s
     use_watchdog: True
+
+jr:
+    debug: False
 
 fast:
     ports: com3, com4, com5

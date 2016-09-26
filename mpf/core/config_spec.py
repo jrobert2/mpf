@@ -293,6 +293,9 @@ fadecandy:
     linear_cutoff: single|float|0.0
     keyframe_interpolation: single|bool|True
     dithering: single|bool|True
+jr:
+    __valid_in__: machine
+    debug: single|bool|False
 fast:
     __valid_in__: machine
     ports: list|str|
