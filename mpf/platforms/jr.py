@@ -1,6 +1,4 @@
-"""Contains the hardware interface and drivers for the FAST Pinball platform
-hardware, including the FAST Core and WPC controllers as well as FAST I/O
-boards.
+"""Contains the hardware interface and drivers for the JR Pinball platform
 """
 
 import logging
@@ -10,18 +8,11 @@ import time
 #import queue
 import traceback
 import io
-from distutils.version import StrictVersion
-from copy import deepcopy
 from serial.tools import list_ports
 import struct
 
 from mpf.core.platform import SwitchPlatform, DriverPlatform
-from mpf.core.utility_functions import Util
-from mpf.platforms.interfaces.rgb_led_platform_interface import RGBLEDPlatformInterface
-from mpf.platforms.interfaces.matrix_light_platform_interface import MatrixLightPlatformInterface
-from mpf.platforms.interfaces.gi_platform_interface import GIPlatformInterface
 from mpf.platforms.interfaces.driver_platform_interface import DriverPlatformInterface
-from mpf.core.rgb_color import RGBColor
 
 try:
     import serial
@@ -32,7 +23,7 @@ except ImportError:
 
 
 class HardwarePlatform(SwitchPlatform, DriverPlatform):
-    """Platform class for the FAST hardware controller.
+    """Platform class for the JR hardware controller.
 
     Args:
         machine: The main ``MachineController`` instance.
@@ -46,33 +37,30 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
 
         if not serial_imported:
             raise AssertionError('Could not import "pySerial". This is required for '
-                                 'the FAST platform interface')
+                                 'the JR platform interface')
 
-        # ----------------------------------------------------------------------
-        # Platform-specific hardware features. WARNING: Do not edit these. They
-        # are based on what the FAST hardware can and cannot do.
-        self.features['max_pulse'] = 255  # todo
-        self.features['hw_rule_coil_delay'] = False  # todo
-        self.features['variable_recycle_time'] = False  # todo
-        self.features['variable_debounce_time'] = False  # todo
+            #self.features['max_pulse'] = 255  # todo
+        #self.features['hw_rule_coil_delay'] = False  # todo
+        #self.features['variable_recycle_time'] = False  # todo
+        #self.features['variable_debounce_time'] = False  # todo
         # Make the platform features available to everyone
-        self.machine.config['platform'] = self.features
+        #self.machine.config['platform'] = self.features
         # ----------------------------------------------------------------------
 
-        self.hw_rules = dict()
-        self.dmd_connection = None
-        self.net_connection = None
-        self.rgb_connection = None
-        self.fast_nodes = list()
-        self.connection_threads = set()
+        #self.hw_rules = dict()
+        #self.dmd_connection = None
+        #self.net_connection = None
+        #self.rgb_connection = None
+        #self.fast_nodes = list()
+        #self.connection_threads = set()
         #self.receive_queue = queue.Queue()
-        self.fast_leds = set()
-        self.flag_led_tick_registered = False
-        self.fast_io_boards = list()
-        self.waiting_for_switch_data = False
+        #self.fast_leds = set()
+        #self.flag_led_tick_registered = False
+        #self.fast_io_boards = list()
+        #self.waiting_for_switch_data = False
         self.config = None
-        self.watchdog_command = None
-        self.machine_type = None
+        #self.watchdog_command = None
+        #self.machine_type = None
         self.hw_switch_data = {}
 
 
@@ -93,14 +81,14 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
     def __repr__(self):
         return '<Platform.JR>'
 
-    def process_received_message(self, msg):
-        """Sends an incoming message from the FAST controller to the proper
-        method for servicing.
-        """
-        print("process_received_message TODO")
-        return
+    #def process_received_message(self, msg):
+    #    """Sends an incoming message from the FAST controller to the proper
+    #    method for servicing.
+    #    """
+    #    print("process_received_message TODO")
+    #    return
 
-    def _connect_to_hardware(self):
+    def _connect_to_hardware(self): # TODO have this in config files
         liste_ports=list_ports.grep("usb")
         for i in liste_ports:
             print(i.serial_number)
@@ -222,8 +210,7 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
         return JRDriver(self,config)
 
     def configure_switch(self, config):
-        """Configures the switch object for a FAST Pinball controller.
-
+        """Configures the switch object  for a JR controller
         """
         print("Configure switch" + str(config) )
         switch=JRSwitch(config)
@@ -239,7 +226,7 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
     def write_hw_rule(self, switch_obj, sw_activity, driver_obj, driver_action,
                       disable_on_release=True, drive_now=False,
                       **driver_settings_overrides):
-        """Used to write (or update) a hardware rule to the FAST controller.
+        """Used to write (or update) a hardware rule to the JR controller.
 
         *Hardware Rules* are used to configure the hardware controller to
         automatically change driver states based on switch changes. These rules
@@ -305,7 +292,7 @@ class JRSwitch(object):
         self.state=False
 
 class JRDriver(DriverPlatformInterface):
-    """Base class for drivers connected to a FAST Controller.
+    """Base class for drivers connected to a JR Controller.
 
     """
 
