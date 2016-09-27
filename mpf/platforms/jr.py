@@ -98,7 +98,7 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
                 self.ser=serial.Serial(i.device)
             if (i.serial_number=="85438303233351D0B121"):
                 self.ser=serial.Serial(i.device)
-    def write(self,x):
+    def _write(self,x):
         if self.ser:
             print("serv:"+str(x))
             self.ser.write(x)
@@ -110,6 +110,7 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
         res={}
         if not self.ser:
             print("Pas connecte!")
+            time.sleep(1)
             return res
         def readOnce():
             x=self.ser.read(size=2)
@@ -129,6 +130,7 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
 
 
     def get_hw_switch_states(self):
+        print("GET HW STATES")
         new_states=self.waitInterrupteurs()
         for numero, etat in new_states.items():
             self.hw_switch_data[numero].state=etat
@@ -136,14 +138,17 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
 
     def set_pulse_on_hit_and_enable_and_release_and_disable_rule(self, enable_switch, disable_switch, coil):
         """Set pulse on hit and enable and release and disable rule on driver."""
+        print("SET PULSE ON HIT AND RELEASE AND DISABLE" + str(enable_switch) + str(coil))
         pass
     def set_pulse_on_hit_and_enable_and_release_rule(self, enable_switch, coil):
         """Set pulse on hit and enable and relase rule on driver."""
+        print("SET PULSE ON HIT AND ENABLE AND RELEASE" + str(enable_switch) + str(coil))
         #TODO
         pass
     
     def set_pulse_on_hit_and_release_rule(self, enable_switch, coil):
         """Set pulse on hit and release rule to driver."""
+        print("SET PULSE ON HIT AND RELEASE" + str(enable_switch) + str(coil))
         #TODO
         pass
 
@@ -151,55 +156,29 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
         """Set pulse on hit rule on driver."""
         print("SET PULSE ON HIT" + str(enable_switch) + str(coil))
         drivers=(1<<int(coil.number))
-        self.write(b"I")
-        self.write(struct.pack("b",int(enable_switch.number)))
-        self.write(struct.pack(">i",drivers))
+        self._write(b"I")
+        self._write(struct.pack("b",int(enable_switch.number)))
+        self._write(struct.pack(">i",drivers))
     def stop(self):
         #TODO
         pass
 
-    def receive_id(self, msg):
-        pass
 
-    def receive_wx(self, msg):
-        pass
+    #def receive_nw_open(self, msg):
+    #    self.machine.switch_controller.process_switch_by_num(state=0,
+    #                                                         num=(msg, 1))
 
-    def receive_ni(self, msg):
-        pass
+    #def receive_nw_closed(self, msg):
+    #    self.machine.switch_controller.process_switch_by_num(state=1,
+    #                                                         num=(msg, 1))
 
-    def receive_rx(self, msg):
-        pass
+    #def receive_local_open(self, msg):
+    #    self.machine.switch_controller.process_switch_by_num(state=0,
+    #                                                         num=(msg, 0))
 
-    def receive_dx(self, msg):
-        pass
-
-    def receive_sx(self, msg):
-        pass
-
-    def receive_lx(self, msg):
-        pass
-
-    def receive_px(self, msg):
-        pass
-
-    def receive_wd(self, msg):
-        pass
-
-    def receive_nw_open(self, msg):
-        self.machine.switch_controller.process_switch_by_num(state=0,
-                                                             num=(msg, 1))
-
-    def receive_nw_closed(self, msg):
-        self.machine.switch_controller.process_switch_by_num(state=1,
-                                                             num=(msg, 1))
-
-    def receive_local_open(self, msg):
-        self.machine.switch_controller.process_switch_by_num(state=0,
-                                                             num=(msg, 0))
-
-    def receive_local_closed(self, msg):
-        self.machine.switch_controller.process_switch_by_num(state=1,
-                                                             num=(msg, 0))
+    #def receive_local_closed(self, msg):
+    #    self.machine.switch_controller.process_switch_by_num(state=1,
+    #                                                         num=(msg, 0))
 
     # def receive_sa(self, msg):
     #    print("receive SA")
@@ -259,9 +238,9 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
         #for drive in self.drivers:
         #   res+=(1<<drive.numero)
         drivers=(1<<int(driver_obj.number))
-        self.write(b"I")
-        self.write(struct.pack("b",int(switch_obj.number)))
-        self.write(struct.pack(">i",drivers))
+        self._write(b"I")
+        self._write(struct.pack("b",int(switch_obj.number)))
+        self._write(struct.pack(">i",drivers))
 
         print("write_hw_rule"+str(switch_obj.config)+str(driver_obj.config) )
         return
@@ -286,6 +265,7 @@ class HardwarePlatform(SwitchPlatform, DriverPlatform):
 class JRSwitch(object):
 
     def __init__(self, config):
+        self.config=config
         self.numero=int(config["number"])
         self.number=int(config["number"])
 
@@ -317,27 +297,27 @@ class JRDriver(DriverPlatformInterface):
     def disable(self):
         """Disables (turns off) this driver. """
         print("DISABLE" + str(self.config))
-        platform.write(b"E")
+        platform._write(b"E")
         res=0
         res+=1<<self.config["numero"]
-        platform.write(struct.pack(">i",res))
+        platform._write(struct.pack(">i",res))
         return
 
     def enable(self):
         """Enables (turns on) this driver. """
         print("ENABLE" + str(self.config))
-        platform.write(b"A")
+        platform._write(b"A")
         res=0
         res+=1<<self.config["numero"]
-        platform.write(struct.pack(">i",res))
+        platform._write(struct.pack(">i",res))
         return
     def pulse(self, milliseconds=None):
         """Pulses this driver. """
         print("PULSE" + str(self.config))
-        self.platform.write(b"P")
+        self.platform._write(b"P")
         res=0
         res+=1<<int(self.config["number"])
-        self.platform.write(struct.pack(">i",res))
+        self.platform._write(struct.pack(">i",res))
         return 3
     def get_board_name(self):
         """Return the name of the board of this driver."""
