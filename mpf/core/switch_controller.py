@@ -154,9 +154,8 @@ class SwitchController(MpfController):
                     switch.state = switch_states[number] ^ switch.invert
                     switch.time = self.machine.clock.get_time()
                 except (IndexError, KeyError):
-                    self.log.warning("Received a status update from hardware "
-                                     "switch %s, but that switch is not in "
-                                     "your config. Just FYI.", number)
+                    raise AssertionError("Missing switch {} in update from hw.  Update from HW: {}, switches: {}".
+                                         format(number, switch_states, switches))
 
     def verify_switches(self) -> bool:
         """Verify that switches states match the hardware.
@@ -624,6 +623,10 @@ class SwitchController(MpfController):
             if state:
                 switch.recycle_jitter_count += 1
             return False
+
+    def get_active_event_for_switch(self, switch_name):
+        """Return the event name which is posted when switch_name becomes active."""
+        return "{}_active".format(switch_name)
 
     def _post_switch_events(self, switch_name, state):
         """Post the game events based on this switch changing state."""
