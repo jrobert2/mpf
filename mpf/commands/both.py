@@ -1,9 +1,17 @@
 """Runs mc and game."""
-import os
-import platform
-import subprocess
+
 from importlib import import_module
-import sys
+import multiprocessing
+
+
+def _start_mpf(mpf_path, machine_path, args):
+    module = import_module('mpf.commands.game')
+    module.Command(mpf_path, machine_path, args)
+
+
+def _start_mc(mpf_path, machine_path, args):
+    module = import_module('mpfmc.commands.mc')
+    module.Command(mpf_path, machine_path, args)
 
 
 class Command(object):
@@ -12,22 +20,12 @@ class Command(object):
 
     def __init__(self, mpf_path, machine_path, args):
         """Run game and mc."""
-        if platform.system() == 'Windows':
-            game_cmd = [sys.executable, "-m", "mpf", "game", machine_path]
-            game_cmd.extend(args)
-            game = subprocess.Popen(game_cmd)
-
-            mc_cmd = [sys.executable, "-m", "mpf", "mc", machine_path]
-            mc_cmd.extend(args)
-            mc = subprocess.Popen(mc_cmd)
-
-            game.wait()
-            mc.wait()
-
-        else:
-            if os.fork():
-                module = import_module('mpf.commands.game')
-                module.Command(mpf_path, machine_path, args)
-            else:
-                module = import_module('mpfmc.commands.mc')
-                module.Command(mpf_path, machine_path, args)
+        multiprocessing.set_start_method('spawn')
+        mpf = multiprocessing.Process(target=_start_mpf,
+                                      args=(mpf_path, machine_path, args))
+        mc = multiprocessing.Process(target=_start_mc,
+                                     args=(mpf_path, machine_path, args))
+        mpf.start()
+        mc.start()
+        mpf.join()
+        mc.join()

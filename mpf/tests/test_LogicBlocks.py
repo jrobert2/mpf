@@ -9,6 +9,54 @@ class TestLogicBlocks(MpfFakeGameTestCase):
     def getMachinePath(self):
         return 'tests/machine_files/logic_blocks/'
 
+    def test_counter_with_lights(self):
+        self.start_game()
+        self.post_event("start_mode2")
+        self.advance_time_and_run()
+
+        self.assertLedColor("led1", "white")
+        self.assertLedColor("led2", "black")
+        self.assertLedColor("led3", "black")
+
+        # nothing happens because it is disabled
+        self.post_event("counter_with_lights_count")
+        self.advance_time_and_run()
+        self.assertLedColor("led1", "white")
+        self.assertLedColor("led2", "black")
+        self.assertLedColor("led3", "black")
+
+        # advance
+        self.post_event("counter_with_lights_enable")
+        self.post_event("counter_with_lights_count")
+        self.advance_time_and_run()
+        self.assertLedColor("led1", "black")
+        self.assertLedColor("led2", "white")
+        self.assertLedColor("led3", "black")
+
+        # stop mode
+        self.post_event("stop_mode2")
+        self.advance_time_and_run()
+
+        # all off
+        self.assertLedColor("led1", "black")
+        self.assertLedColor("led2", "black")
+        self.assertLedColor("led3", "black")
+
+        # restart mode. should restore state
+        self.post_event("start_mode2")
+        self.advance_time_and_run()
+        self.assertLedColor("led1", "black")
+        self.assertLedColor("led2", "white")
+        self.assertLedColor("led3", "black")
+
+        # and complete
+        self.post_event("counter_with_lights_count")
+        self.advance_time_and_run()
+        self.assertLedColor("led1", "black")
+        self.assertLedColor("led2", "black")
+        self.assertLedColor("led3", "white")
+
+
     def test_accruals_simple(self):
         self.start_game()
         self.mock_event("accrual1_complete1")
@@ -205,9 +253,11 @@ class TestLogicBlocks(MpfFakeGameTestCase):
             self.post_event("counter2_count")
             self.assertEqual(i+1, self._events["counter2_hit"])
             self.assertEqual(0, self._events["counter2_complete"])
+            self.assertEventCalledWith("counter2_hit", count=i + 1, remaining=2 - i)
 
         self.post_event("counter2_count")
         self.assertEqual(1, self._events["counter2_complete"])
+        self.assertEventCalledWith("counter2_hit", count=3, remaining=0)
 
         # should run again
         for i in range(2):
@@ -382,11 +432,42 @@ class TestLogicBlocks(MpfFakeGameTestCase):
             self.assertEqual(2+i, self._events["counter_counter3_hit"])
             self.advance_time_and_run(1)
 
-
         # it should complete
         self.post_event("counter3_count")
         self.assertEqual(1, self._events["logicblock_counter3_complete"])
         self.assertEqual(5, self._events["counter_counter3_hit"])
+
+    def test_counter_template(self):
+        self.start_game()
+        self.mock_event("logicblock_counter4_complete")
+        self.mock_event("counter_counter4_hit")
+
+        self.machine.game.player.hits = 2
+
+        self.post_event("counter4_enable")
+        for i in range(2):
+            self.assertEqual(0, self._events["logicblock_counter4_complete"])
+            self.post_event("counter4_count")
+
+        self.assertEqual(2, self._events["counter_counter4_hit"])
+        self.assertEqual(1, self._events["logicblock_counter4_complete"])
+        self.advance_time_and_run(1)
+
+        self.machine.create_machine_var("start", 1)
+        self.machine.game.player.hits = 5
+        self.mock_event("logicblock_counter4_complete")
+        self.mock_event("counter_counter4_hit")
+
+        self.post_event("counter4_reset")
+        self.post_event("counter4_enable")
+        for i in range(4):
+            self.assertEqual(0, self._events["logicblock_counter4_complete"])
+            self.post_event("counter4_count")
+
+        # inside same window. only one hit
+        self.assertEqual(4, self._events["counter_counter4_hit"])
+        self.assertEqual(1, self._events["logicblock_counter4_complete"])
+        self.advance_time_and_run(1)
 
     def test_counter_persist(self):
         self.mock_event("logicblock_counter_persist_complete")

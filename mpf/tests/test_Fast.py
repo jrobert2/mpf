@@ -15,6 +15,8 @@ class BaseMockFast(MockSerial):
 
     def read(self, length):
         del length
+        if not self.queue:
+            return
         msg = (self.queue.pop() + '\r').encode()
         return msg
 
@@ -34,7 +36,7 @@ class BaseMockFast(MockSerial):
         cmd = cmd[:-1]
 
         # ignore init garbage
-        if cmd == (' ' * 256):
+        if cmd == (' ' * 256 * 4):
             return msg_len
 
         if cmd[:3] == "WD:":
@@ -67,7 +69,7 @@ class MockFastDmd(BaseMockFast):
 
     def write(self, msg):
         msg_len = len(msg)
-        if msg == (b' ' * 256) + b"\r":
+        if msg == (b' ' * 256 * 4) + b"\r":
             return msg_len
 
         cmd = msg
@@ -133,13 +135,13 @@ class TestFast(MpfTestCase):
 
         }
         self.rgb_cpu.expected_commands = {
-            'ID:': 'ID:RGB FP-CPU-002-1 00.88',
+            'ID:': 'ID:RGB FP-CPU-002-1 00.89',
             "RF:0": "RF:P",
             "RA:000000": "RA:P",
             "RF:00": "RF:P",
         }
         self.net_cpu.expected_commands = {
-            'ID:': 'ID:NET FP-CPU-002-1 00.88',
+            'ID:': 'ID:NET FP-CPU-002-1 00.90',
             'NN:0': 'NN:00,FP-I/O-3208-2   ,01.00,08,20,04,06,00,00,00,00',     # 3208 board
             'NN:1': 'NN:01,FP-I/O-0804-1   ,01.00,04,08,04,06,00,00,00,00',     # 0804 board
             'NN:2': 'NN:02,FP-I/O-1616-2   ,01.00,10,10,04,06,00,00,00,00',     # 1616 board
@@ -180,6 +182,13 @@ class TestFast(MpfTestCase):
         self.assertEqual(16, self.machine.default_platform.io_boards[2].driver_count)
         self.assertEqual(16, self.machine.default_platform.io_boards[3].switch_count)
         self.assertEqual(16, self.machine.default_platform.io_boards[3].driver_count)
+
+        self.assertEqual("00.88", self.machine.get_machine_var("fast_dmd_firmware"))
+        self.assertEqual("FP-CPU-002-1", self.machine.get_machine_var("fast_dmd_model"))
+        self.assertEqual("00.89", self.machine.get_machine_var("fast_rgb_firmware"))
+        self.assertEqual("FP-CPU-002-1", self.machine.get_machine_var("fast_rgb_model"))
+        self.assertEqual("00.90", self.machine.get_machine_var("fast_net_firmware"))
+        self.assertEqual("FP-CPU-002-1", self.machine.get_machine_var("fast_net_model"))
 
     def test_coils(self):
         self._test_pulse()
@@ -382,7 +391,7 @@ class TestFast(MpfTestCase):
         self.advance_time_and_run(.1)
         self.assertFalse(self.net_cpu.expected_commands)
 
-    def _switch_hit_cb(self):
+    def _switch_hit_cb(self, **kwargs):
         self.switch_hit = True
 
     def test_switches(self):

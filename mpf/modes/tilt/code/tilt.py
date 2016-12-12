@@ -88,12 +88,13 @@ class Tilt(Mode):
 
     # ignore false positives about self.player
     # pylint: disable-msg=unsubscriptable-object
-    def tilt_warning(self):
+    def tilt_warning(self, **kwargs):
         """Process a tilt warning.
 
          If the number of warnings is the number to
         cause a tilt, a tilt will be processed.
         """
+        del kwargs
         self.last_tilt_warning_switch = self.machine.clock.get_time()
 
         if not self.player:
@@ -202,7 +203,8 @@ class Tilt(Mode):
 
             self.tilt_warning()
 
-    def _ball_ending_tilted(self, queue):
+    def _ball_ending_tilted(self, queue, **kwargs):
+        del kwargs
         self.ball_ending_tilted_queue = queue
         queue.wait()
 
@@ -225,7 +227,9 @@ class Tilt(Mode):
             start until the plumb bob has settled to prevent tilt throughs.
             '''
 
-            self.ball_ending_tilted_queue.clear()
+            if self.ball_ending_tilted_queue:
+                self.ball_ending_tilted_queue.clear()
+                self.ball_ending_tilted_queue = None
 
             self.machine.events.remove_handlers_by_keys(
                 self.tilt_event_handlers)
@@ -244,8 +248,9 @@ class Tilt(Mode):
         else:
             return 0
 
-    def slam_tilt(self):
+    def slam_tilt(self, **kwargs):
         """Process a slam tilt."""
+        del kwargs
         self.machine.events.post('slam_tilt')
         '''event: slam_tilt
         desc: A slam tilt has just occurred.'''

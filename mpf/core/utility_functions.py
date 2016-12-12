@@ -24,8 +24,33 @@ class Util(object):
         elif isinstance(value, list):
             return [Util.convert_to_simply_type(x) for x in value]
 
+        elif isinstance(value, dict):
+            new_dict = dict()
+            for key, value in value.items():
+                new_dict[Util.convert_to_simply_type(key)] = Util.convert_to_simply_type(value)
+
+            return new_dict
+
+        elif isinstance(value, tuple):
+            # pylint: disable-msg=protected-access
+            return value
+
         # otherwise just cast to string
         return str(value)
+
+    @staticmethod
+    def convert_to_type(value, type_name):
+        """Convert value to type."""
+        if type_name == "int":
+            result_value = int(value)   # pylint: disable-msg=redefined-variable-type
+        elif type_name == "float":
+            result_value = float(value)     # pylint: disable-msg=redefined-variable-type
+        elif type_name == "str":
+            result_value = str(value)   # pylint: disable-msg=redefined-variable-type
+        else:
+            raise AssertionError("Unknown type {}".format(type_name))
+
+        return result_value
 
     @staticmethod
     def keys_to_lower(source_dict):
@@ -192,8 +217,13 @@ class Util(object):
                     del result[k]
             elif k in result and isinstance(result[k], dict):
                 result[k] = Util.dict_merge(result[k], v)
-            elif k in result and isinstance(result[k], list) and combine_lists:
-                result[k].extend(v)
+            elif k in result and isinstance(result[k], list):
+                if v[0] == dict(_overwrite=True):
+                    result[k] = v[1:]
+                elif combine_lists:
+                    result[k].extend(v)
+                else:
+                    result[k] = deepcopy(v)
             else:
                 result[k] = deepcopy(v)
         # log.info("Dict Merge result: %s", result)
@@ -537,11 +567,10 @@ class Util(object):
             A reference to the python class object
 
         This function came from here:
-        http://stackoverflow.com/questions/452969/
-        does-python-have-an-equivalent-to-java-class-forname
+        http://stackoverflow.com/questions/452969/does-python-have-an-equivalent-to-java-class-forname
 
         """
-        # todo I think thre's a better way to do this in Python 3
+        # todo I think there's a better way to do this in Python 3
         parts = class_string.split('.')
         module = ".".join(parts[:-1])
         m = __import__(module)

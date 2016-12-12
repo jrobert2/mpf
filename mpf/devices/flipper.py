@@ -68,7 +68,7 @@ class Flipper(SystemWideDevice):
         if self.config['power_setting_name']:
             overwrite_config = copy.deepcopy(overwrite_config)
             pulse_ms = driver.config.get(
-                "pulse_ms", overwrite_config.get("pulse_ms",self.machine.config['mpf']['default_pulse_ms']))
+                "pulse_ms", overwrite_config.get("pulse_ms", self.machine.config['mpf']['default_pulse_ms']))
             settings_factor = self.machine.settings.get_setting_value(self.config['power_setting_name'])
             overwrite_config['pulse_ms'] = int(pulse_ms * settings_factor)
             self.log.info("Configuring driver %s with a pulse time of %s ms for flipper",
@@ -195,14 +195,17 @@ class Flipper(SystemWideDevice):
         Note this method will keep this flipper enabled until you call
         sw_release().
         """
-        # todo add support for other types of flipper coils
         # Send the activation switch press to the switch controller
         self.machine.switch_controller.process_switch(
             name=self.config['activation_switch'].name,
             state=1,
             logical=True)
 
-        self.config['main_coil'].enable()
+        if self.config['hold_coil']:
+            self.config['main_coil'].pulse()
+            self.config['hold_coil'].enable()
+        else:
+            self.config['main_coil'].enable()
 
     def sw_release(self):
         """Deactive the flipper via software as if the flipper button was released.
@@ -217,3 +220,6 @@ class Flipper(SystemWideDevice):
 
         # disable the flipper coil(s)
         self.config['main_coil'].disable()
+
+        if self.config['hold_coil']:
+            self.config['hold_coil'].disable()

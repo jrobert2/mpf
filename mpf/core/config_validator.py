@@ -31,6 +31,9 @@ class ConfigValidator(object):
             "int": self._validate_type_int,
             "num": self._validate_type_num,
             "bool": self._validate_type_bool,
+            "template_float": self._validate_type_template_float,
+            "template_int": self._validate_type_template_int,
+            "template_bool": self._validate_type_template_bool,
             "boolean": self._validate_type_bool,
             "ms": self._validate_type_ms,
             "secs": self._validate_type_secs,
@@ -49,6 +52,11 @@ class ConfigValidator(object):
 
         if not ConfigValidator.config_spec:
             ConfigValidator.load_config_spec()
+
+    @classmethod
+    def load_device_config_spec(cls, config_section, config_spec):
+        """Load config specs for a device."""
+        cls.config_spec[config_section] = YamlInterface.process(config_spec)
 
     @classmethod
     def load_mode_config_spec(cls, mode_string, config_spec):
@@ -232,36 +240,43 @@ class ConfigValidator(object):
     def check_for_invalid_sections(self, spec, config,
                                    validation_failure_info):
         """Check if all attributes are defined in spec."""
-        for k in config:
-            if not isinstance(k, dict):
-                if k not in spec and k[0] != '_':
+        try:
+            for k in config:
+                if not isinstance(k, dict):
+                    if k not in spec and k[0] != '_':
 
-                    path_list = validation_failure_info[0].split(':')
+                        path_list = validation_failure_info[0].split(':')
 
-                    if len(path_list) > 1 and path_list[-1] == validation_failure_info[1]:
-                        path_list.append('[list_item]')
-                    elif path_list[0] == validation_failure_info[1]:
-                        path_list = list()
+                        if len(path_list) > 1 and path_list[-1] == validation_failure_info[1]:
+                            path_list.append('[list_item]')
+                        elif path_list[0] == validation_failure_info[1]:
+                            path_list = list()
 
-                    path_list.append(validation_failure_info[1])
-                    path_list.append(k)
+                        path_list.append(validation_failure_info[1])
+                        path_list.append(k)
 
-                    path_string = ':'.join(path_list)
+                        path_string = ':'.join(path_list)
 
-                    if self.machine.machine_config['mpf']['allow_invalid_config_sections']:
+                        if self.machine.machine_config['mpf']['allow_invalid_config_sections']:
 
-                        self.log.warning('Unrecognized config setting. "%s" is '
-                                         'not a valid setting name.',
-                                         path_string)
+                            self.log.warning('Unrecognized config setting. "%s" is '
+                                             'not a valid setting name.',
+                                             path_string)
 
-                    else:
-                        self.log.error('Your config contains a value for the '
-                                       'setting "%s", but this is not a valid '
-                                       'setting name.', path_string)
+                        else:
+                            self.log.error('Your config contains a value for the '
+                                           'setting "%s", but this is not a valid '
+                                           'setting name.', path_string)
 
-                        raise AssertionError('Your config contains a value for the '
-                                             'setting "' + path_string + '", but this is not a valid '
-                                                                         'setting name.')
+                            raise AssertionError('Your config contains a value for the '
+                                                 'setting "' + path_string + '", but this is not a valid '
+                                                                             'setting name.')
+
+        except TypeError:
+            raise AssertionError(
+                'Error in config. Your "{}:" section contains a value that is '
+                'not a parent with sub-settings'.format(
+                    validation_failure_info[0]))
 
     def _validate_type_subconfig(self, item, param, validation_failure_info):
         try:
@@ -343,6 +358,27 @@ class ConfigValidator(object):
             return str(item).lower()
         else:
             return None
+
+    def _validate_type_template_float(self, item, validation_failure_info):
+        if item is None:
+            return None
+        if not isinstance(item, str):
+            self.validation_error(item, validation_failure_info, "Template has to be string.")
+
+        return self.machine.placeholder_manager.build_float_template(item)
+
+    def _validate_type_template_int(self, item, validation_failure_info):
+        if item is None:
+            return None
+        return self.machine.placeholder_manager.build_int_template(str(item))
+
+    def _validate_type_template_bool(self, item, validation_failure_info):
+        if item is None:
+            return None
+        if not isinstance(item, str):
+            self.validation_error(item, validation_failure_info, "Template has to be string.")
+
+        return self.machine.placeholder_manager.build_bool_template(item)
 
     def _validate_type_float(self, item, validation_failure_info):
         if item is None:

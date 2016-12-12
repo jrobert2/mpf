@@ -44,7 +44,10 @@ class BcpTransportManager:
 
         Will raise exceptions from within task.
         """
-        future.result()
+        try:
+            future.result()
+        except asyncio.CancelledError:
+            pass
 
     @asyncio.coroutine
     def _receive_loop(self, transport: BaseBcpClient):
@@ -79,8 +82,7 @@ class BcpTransportManager:
         for client in self._transports:
             if client.name == client_name:
                 return client
-        else:
-            return False
+        return False
 
     def send_to_clients(self, clients, bcp_command, **kwargs):
         """Send command to a list of clients."""
@@ -105,8 +107,9 @@ class BcpTransportManager:
         for client in self._transports:
             self.send_to_client(client, bcp_command, **kwargs)
 
-    def shutdown(self):
+    def shutdown(self, **kwargs):
         """Prepare the BCP clients for MPF shutdown."""
+        del kwargs
         for client in self._transports:
             client.stop()
             self.unregister_transport(client)

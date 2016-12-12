@@ -31,7 +31,6 @@ class Bcp(MpfController):
         self.machine.events.add_handler('shutdown',
                                         self._stop_servers)
 
-
     def send(self, bcp_command, **kwargs):
         """Emulate legacy send.
 
@@ -40,19 +39,22 @@ class Bcp(MpfController):
         """
         self.transport.send_to_all_clients(bcp_command, **kwargs)
 
-    def _setup_bcp_connections(self):
+    def _setup_bcp_connections(self, **kwargs):
         """Connect to BCP servers from MPF config."""
-        if 'connections' not in self.machine.config['bcp'] or not self.machine.config['bcp']['connections']:
+        del kwargs
+        if ('connections' not in self.machine.config['bcp'] or not
+                self.machine.config['bcp']['connections']):
             return
 
         for name, settings in self.machine.config['bcp']['connections'].items():
             client = Util.string_to_class(settings['type'])(self.machine, name, self.machine.bcp)
-            client.connect(settings)
-            client.exit_on_close = True
-            self.transport.register_transport(client)
+            if client.connect(settings):
+                client.exit_on_close = settings['exit_on_close']
+                self.transport.register_transport(client)
 
-    def _setup_bcp_servers(self):
+    def _setup_bcp_servers(self, **kwargs):
         """Start BCP servers to allow other clients to connect."""
+        del kwargs
         if 'servers' not in self.machine.config['bcp'] or not self.machine.config['bcp']['servers']:
             return
 
@@ -61,7 +63,8 @@ class Bcp(MpfController):
             self.machine.clock.loop.run_until_complete(server.start())
             self.servers.append(server)
 
-    def _stop_servers(self):
+    def _stop_servers(self, **kwargs):
         """Stop BCP servers."""
+        del kwargs
         for server in self.servers:
             server.stop()

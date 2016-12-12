@@ -27,6 +27,11 @@ class Multiball(SystemWideDevice, ModeDevice):
         self.enabled = False
         self.shoot_again = False
 
+    @property
+    def can_exist_outside_of_game(self):
+        """Return true if this device can exist outside of a game."""
+        return True
+
     def device_removed_from_mode(self, mode):
         """Disable and stop mb when mode stops."""
         del mode
@@ -126,6 +131,9 @@ class Multiball(SystemWideDevice, ModeDevice):
         if balls_to_safe <= 0:
             return {'balls': balls}
 
+        if balls_to_safe > balls:
+            balls_to_safe = balls
+
         self.machine.events.post("multiball_" + self.name + "_shoot_again", balls=balls_to_safe)
         '''event: multiball_(name)_shoot_again
         desc: A ball has drained during the multiball called (name) while the
@@ -147,7 +155,7 @@ class Multiball(SystemWideDevice, ModeDevice):
         desc: The multiball called (name) has lost a ball after ball save expired.
         '''
 
-        if self.machine.game.balls_in_play - balls < 1:
+        if not self.machine.game or self.machine.game.balls_in_play - balls < 1:
             self.balls_added_live = 0
             self.balls_live_target = 0
             self.machine.events.remove_handler(self._ball_drain_count_balls)
@@ -165,6 +173,11 @@ class Multiball(SystemWideDevice, ModeDevice):
 
         # disable shoot again
         self.machine.events.remove_handler(self._ball_drain_shoot_again)
+
+        self.machine.events.post("multiball_" + self.name + "_shoot_again_ended")
+        '''event: multiball_(name)_shoot_again_ended
+        desc: Shoot again for multiball (name) has ended.
+        '''
 
         # add handler for ball_drain until self.balls_ejected are drained
         self.machine.events.add_handler('ball_drain', self._ball_drain_count_balls)

@@ -194,6 +194,15 @@ class MachineController(object):
             credit_string = 'FREE PLAY'
 
         self.create_machine_var('credits_string', credit_string, silent=True)
+        '''machine_var: credits_string
+
+        desc: Holds a displayable string which shows how many
+        credits are on the machine. For example, "CREDITS: 1". If the machine
+        is set to free play, the value of this string will be "FREE PLAY".
+
+        You can change the format and value of this string in the ``credits:``
+        section of the machine config file.
+        '''
 
     def _validate_config(self):
         self.validate_machine_config_section('machine')
@@ -564,8 +573,9 @@ class MachineController(object):
 
         self._run_loop()
 
-    def stop(self):
+    def stop(self, **kwargs):
         """Perform a graceful exit of MPF."""
+        del kwargs
         if self._done:
             return
 
@@ -611,7 +621,7 @@ class MachineController(object):
         for platform in list(self.hardware_platforms.values()):
             platform.stop()
 
-    def power_off(self):
+    def power_off(self, **kwargs):
         """Attempt to perform a power down of the pinball machine and ends MPF.
 
         This method is not yet implemented.

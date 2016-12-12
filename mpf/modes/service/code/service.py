@@ -50,20 +50,23 @@ down_events: list|str|sw_service_down_active
             elif key == "UP":
                 # post event for mc to increase volume
                 self.machine.events.post("master_volume_increase")
+                '''event: master_volume_increase
+
+                desc: Increase the master volume of the audio system.
+                '''
             elif key == "DOWN":
                 # post event for mc to decrease volume
                 self.machine.events.post("master_volume_decrease")
+                '''event: master_volume_decrease
+
+                desc: Decrease the master volume of the audio system.
+                '''
 
     @asyncio.coroutine
     def _start_main_menu(self):
         self.machine.service.start_service()
         self.machine.events.post("service_main_menu")
-        try:
-            yield from self._service_mode_main_menu()
-        except asyncio.CancelledError:  # pragma: no cover
-            # mode is stopping
-            self._service_mode_exit()
-            raise
+        yield from self._service_mode_main_menu()
 
         self._service_mode_exit()
 
@@ -110,6 +113,7 @@ down_events: list|str|sw_service_down_active
     def _switch_monitor(self, change: MonitoredSwitchChange):
         if change.state:
             state_string = "active"
+            self.machine.events.post("service_switch_hit")
         else:
             state_string = "inactive"
 

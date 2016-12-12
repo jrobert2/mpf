@@ -9,6 +9,15 @@ from mpf._version import __version__, __bcp_version__
 from mpf.core.bcp.bcp_client import BaseBcpClient
 
 
+class MpfJSONEncoder(json.JSONEncoder):
+
+    """Encoder which by default encodes to string."""
+
+    def default(self, o):
+        """Encode to string."""
+        return str(o)
+
+
 def decode_command_string(bcp_string):
     """Decode a BCP command string into separate command and paramter parts.
 
@@ -97,6 +106,8 @@ def encode_command_string(bcp_command, **kwargs):
             value = 'float:{}'.format(value)
         elif v is None:
             value = 'NoneType:'
+        else:  # cast anything else as a string
+            value = str(value)
 
         kwarg_string += '{}={}&'.format(quote(k.lower(), ''),
                                         value)
@@ -104,7 +115,7 @@ def encode_command_string(bcp_command, **kwargs):
     kwarg_string = kwarg_string[:-1]
 
     if json_needed:
-        kwarg_string = 'json={}'.format(json.dumps(kwargs))
+        kwarg_string = 'json={}'.format(json.dumps(kwargs, cls=MpfJSONEncoder))
 
     return str(urlunparse(('', '', bcp_command.lower(), '', kwarg_string, '')))
 
@@ -141,27 +152,34 @@ class BCPClientSocket(BaseBcpClient):
         config = self.machine.config_validator.validate_config(
             'bcp:connections', config, 'bcp:connections')
 
-        self.machine.clock.loop.run_until_complete(self._setup_client_socket(config['host'], config['port']))
+        return self.machine.clock.loop.run_until_complete(
+            self._setup_client_socket(config['host'], config['port'], config.get('required')))
 
     @asyncio.coroutine
-    def _setup_client_socket(self, client_host, client_port):
+    def _setup_client_socket(self, client_host, client_port, required=True):
         """Set up the client socket."""
-        self.log.info("Connecting to BCP Media Controller at %s:%s...",
-                      client_host, client_port)
+        self.log.info("Connecting BCP to '%s' at %s:%s...",
+                      self.name, client_host, client_port)
 
         while True:
             connector = self.machine.clock.open_connection(client_host, client_port)
             try:
                 self._receiver, self._sender = yield from connector
             except (ConnectionRefusedError, OSError):
-                yield from asyncio.sleep(.1)
-                continue
+                if required:
+                    yield from asyncio.sleep(.1)
+                    continue
+                else:
+                    self.log.info("No BCP connection made to '%s' %s:%s",
+                                  self.name, client_host, client_port)
+                    return False
 
             break
 
-        self.log.debug("Connected to remote BCP host %s:%s", client_host, client_port)
+        self.log.info("Connected BCP to '%s' %s:%s", self.name, client_host, client_port)
 
         self.send_hello()
+        return True
 
     def accept_connection(self, receiver, sender):
         """Create client for incoming connection."""
@@ -188,7 +206,8 @@ class BCPClientSocket(BaseBcpClient):
         """
         bcp_string = encode_command_string(bcp_command, **bcp_command_args)
 
-        self.log.debug('Sending "%s"', bcp_string)
+        if self.debug_log:
+            self.log.debug('Sending "%s"', bcp_string)
         self._sender.write((bcp_string + '\n').encode())
 
     @asyncio.coroutine

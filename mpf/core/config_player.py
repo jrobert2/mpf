@@ -35,7 +35,8 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         """Return string representation."""
         return 'ConfigPlayer.{}'.format(self.show_section)
 
-    def _initialize_in_mode(self):
+    def _initialize_in_mode(self, **kwargs):
+        del kwargs
         self.machine.mode_controller.register_load_method(
             self.process_mode_config, self.config_file_section)
 
@@ -47,7 +48,8 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
 
         # if self.config_file_section in self.machine.config:
 
-    def _initialise_system_wide(self):
+    def _initialise_system_wide(self, **kwargs):
+        del kwargs
         if self.machine_collection_name:
             self.device_collection = getattr(self.machine,
                                              self.machine_collection_name)
@@ -91,7 +93,9 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         raise NotImplementedError("implement")
 
     def _parse_config(self, config, name):
-        if isinstance(config, (str, int, float, type(None))):
+        if config is None:
+            raise AssertionError("Empty config player {}".format(name))
+        elif isinstance(config, (str, int, float)):
             # express config, convert to full
             config = self.get_express_config(config)
         elif isinstance(config, list):
@@ -189,6 +193,18 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         """Clear the context."""
         pass
 
+    @staticmethod
+    def _parse_event_priority(event, priority):
+        if 0 < event.find(".") and (event.find("{") < 0 or event.find(".") < event.find("{")):
+            new_event = event[:event.find(".")]
+            if event.find("{") > 0:
+                priority += int(event[event.find(".") + 1:event.find("{")])
+                new_event += event[event.find("{"):]
+            else:
+                priority += int(event[event.find(".") + 1:])
+            event = new_event
+        return event, priority
+
     def register_player_events(self, config, mode=None, priority=0):
         """Register events for standalone player."""
         # config is localized
@@ -196,10 +212,12 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
 
         if config:
             for event, settings in config.items():
+                event, priority = self._parse_event_priority(event, priority)
                 key_list.append(
                     self.machine.events.add_handler(
                         event=event,
                         handler=self.config_play_callback,
+                        calling_context=event,
                         priority=priority,
                         mode=mode,
                         settings=settings))
@@ -210,7 +228,7 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         """Remove event for standalone player."""
         self.machine.events.remove_handlers_by_keys(key_list)
 
-    def config_play_callback(self, settings, priority=0, mode=None, **kwargs):
+    def config_play_callback(self, settings, calling_context, priority=0, mode=None, **kwargs):
         """Callback for standalone player."""
         # called when a config_player event is posted
         if mode:
@@ -227,9 +245,10 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         else:
             context = "_global"
 
-        self.play(settings=settings, context=context, priority=priority, **kwargs)
+        self.play(settings=settings, context=context, calling_context=calling_context, priority=priority, **kwargs)
 
-    def show_play_callback(self, settings, priority, show_tokens, context):
+    # pylint: disable-msg=too-many-arguments
+    def show_play_callback(self, settings, priority, calling_context, show_tokens, context):
         """Callback if used in a show."""
         # called from a show step
         if context not in self.instances:
@@ -238,7 +257,7 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         if self.config_file_section not in self.instances[context]:
             self.instances[context][self.config_file_section] = dict()
 
-        self.play(settings=settings, priority=priority,
+        self.play(settings=settings, priority=priority, calling_context=calling_context,
                   show_tokens=show_tokens, context=context)
 
     def show_stop_callback(self, context):
@@ -246,7 +265,7 @@ class ConfigPlayer(object, metaclass=abc.ABCMeta):
         self.clear_context(context)
 
     @abc.abstractmethod
-    def play(self, settings, context, priority=0, **kwargs):
+    def play(self, settings, context, calling_context, priority=0, **kwargs):
         """Directly play player."""
         # **kwargs since this is an event callback
         raise NotImplementedError

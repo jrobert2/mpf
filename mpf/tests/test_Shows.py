@@ -585,9 +585,9 @@ class TestShows(MpfTestCase):
         self.assertIn(self.machine.leds.led_01, copied_show[0]['leds'])
         self.assertIn(self.machine.leds.led_02, copied_show[0]['leds'])
         self.assertEqual(copied_show[0]['leds'][self.machine.leds.led_01],
-                         dict(color='006400', fade_ms=0, priority=0))
+                         dict(color='006400', fade_ms=None, priority=0))
         self.assertEqual(copied_show[0]['leds'][self.machine.leds.led_02],
-                         dict(color='cccccc', fade_ms=0, priority=0))
+                         dict(color='cccccc', fade_ms=None, priority=0))
         self.assertEqual(copied_show[3]['leds'][self.machine.leds.led_01],
                          dict(color='midnightblue', fade_ms=500, priority=0))
 
@@ -775,3 +775,99 @@ class TestShows(MpfTestCase):
         self.post_event("advance_manual_step_back")
         self.advance_time_and_run()
         self.assertEqual([0, 0, 255], self.machine.leds.led_01.hw_driver.current_color)
+
+    def test_queue_event(self):
+        done = MagicMock()
+        self.mock_event("step1")
+        self.mock_event("step2")
+        self.mock_event("step3")
+        self.machine.events.post_queue("queue_play", done)
+        self.advance_time_and_run(.1)
+        self.assertEventCalled("step1")
+        self.assertEventNotCalled("step2")
+        self.assertEventNotCalled("step3")
+        done.assert_not_called()
+        self.advance_time_and_run(1)
+        self.assertEventCalled("step1")
+        self.assertEventCalled("step2")
+        self.assertEventNotCalled("step3")
+        done.assert_not_called()
+        self.advance_time_and_run(1)
+        self.assertEventCalled("step1")
+        self.assertEventCalled("step2")
+        self.assertEventCalled("step3")
+        done.assert_not_called()
+        self.mock_event("step1")
+        self.mock_event("step2")
+        self.mock_event("step3")
+        self.advance_time_and_run(1)
+        self.assertEventNotCalled("step1")
+        self.assertEventNotCalled("step2")
+        self.assertEventNotCalled("step3")
+        done.assert_called_once_with()
+
+    def test_show_player_emitted_events(self):
+        self.mock_event('test_show1_played')
+        self.mock_event('test_show1_played2')
+        self.mock_event('test_show1_stopped')
+        self.mock_event('test_show1_looped')
+        self.mock_event('test_show1_paused')
+        self.mock_event('test_show1_resumed')
+        self.mock_event('test_show1_advanced')
+        self.mock_event('test_show1_stepped_back')
+        self.mock_event('test_show1_completed')
+
+        self.machine.events.post('play_with_emitted_events')
+        self.advance_time_and_run(1)
+        self.assertEventCalled('test_show1_played')
+        self.assertEventCalled('test_show1_played2')
+        self.assertEventNotCalled('test_show1_stopped')
+        self.assertEventNotCalled('test_show1_looped')
+        self.assertEventNotCalled('test_show1_paused')
+        self.assertEventNotCalled('test_show1_resumed')
+        self.assertEventNotCalled('test_show1_advanced')
+        self.assertEventNotCalled('test_show1_stepped_back')
+        self.assertEventNotCalled('test_show1_completed')
+
+        self.advance_time_and_run(6)
+        self.assertEventCalled('test_show1_looped')
+        self.assertEventNotCalled('test_show1_stopped')
+        self.assertEventNotCalled('test_show1_paused')
+        self.assertEventNotCalled('test_show1_resumed')
+        self.assertEventNotCalled('test_show1_advanced')
+        self.assertEventNotCalled('test_show1_stepped_back')
+
+        self.machine.events.post('pause_emitted_events_show')
+        self.advance_time_and_run(1)
+        self.assertEventCalled('test_show1_paused')
+
+        self.machine.events.post('advance_emitted_events_show')
+        self.advance_time_and_run(1)
+        self.assertEventCalled('test_show1_advanced')
+
+        self.machine.events.post('step_back_emitted_events_show')
+        self.advance_time_and_run(1)
+        self.assertEventCalled('test_show1_stepped_back')
+
+        self.machine.events.post('resume_emitted_events_show')
+        self.advance_time_and_run(1)
+        self.assertEventCalled('test_show1_resumed')
+
+        self.machine.events.post('stop_emitted_events_show')
+        self.advance_time_and_run(1)
+        self.assertEventCalled('test_show1_stopped')
+
+        self.assertEventNotCalled('test_show1_completed')
+
+    def test_show_player_completed_events(self):
+        self.mock_event('test_show1_completed')
+        self.mock_event('test_show1_stopped')
+
+        self.machine.events.post('play_with_completed_event')
+        self.advance_time_and_run(1)
+        self.assertEventNotCalled('test_show1_completed')
+        self.assertEventNotCalled('test_show1_stopped')
+
+        self.advance_time_and_run(6)
+        self.assertEventCalled('test_show1_completed')
+        self.assertEventCalled('test_show1_stopped')

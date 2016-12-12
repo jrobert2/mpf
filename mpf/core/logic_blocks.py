@@ -47,6 +47,12 @@ class LogicBlocks(object):
         """
         del kwargs
         player.logic_blocks = set()
+        '''player_var: logic_blocks
+
+        desc: A set which contains references to all the logic blocks which
+        exist for this player. There's nothing useful in here for you, we just
+        include it so you know what this player variable does.
+        '''
 
         if 'logic_blocks' in self.machine.config:
             self._create_logic_blocks(
@@ -81,16 +87,16 @@ class LogicBlocks(object):
             # we're iterating over
             block.player_turn_stop()
 
-    def _process_config(self, config: dict, priority: int=0, mode: Mode=None):
+    def _process_config(self, config: dict, mode: Mode, priority: int=0):
         del priority
         self.log.debug("Processing LogicBlock configuration.")
 
         blocks_added = self._create_logic_blocks(config=config,
                                                  player=self.machine.game.player)
 
-        if mode:
-            for block in blocks_added:
-                block.create_control_events()
+        for block in blocks_added:
+            block.create_control_events()
+            mode.add_mode_event_handler("mode_{}_started".format(mode.name), block.mode_started)
 
         return self._unload_logic_blocks, blocks_added
 
@@ -117,12 +123,7 @@ class LogicBlocks(object):
                                           config['sequences'][item])
                 blocks_added.add(sequence_block)
 
-        # Enable any logic blocks that do not have specific enable events
-        for block in blocks_added:
-            if not block.config['enable_events']:
                 block.log.debug("Enabling")
-                block.enabled = True
-
         player.logic_blocks |= blocks_added
 
         return blocks_added
@@ -146,9 +147,6 @@ class LogicBlock(object):
         self.handler_keys = set()
         self.log = None
 
-        self.enabled = False
-        self.completed = False
-
         # LogicBlocks are loaded multiple times and config_validator changes the config
         # therefore we have to copy the config
         config = copy.deepcopy(config)
@@ -157,11 +155,55 @@ class LogicBlock(object):
             'logic_blocks:{}'.format(self.config_section_name), config,
             base_spec='logic_blocks:common')
 
+        self.player_state_variable = "{}_state".format(self.name)
+        '''player_var: (logic_block)_state
+
+        desc: A dictionary that stores the internal state of the logic block
+        with the name (logic_block). (In other words, a logic block called
+        *mode1_hit_counter* will store its state in a player variable called
+        ``mode1_hit_counter_state``).
+
+        The state that's stored in this variable include whether the logic
+        block is enabled and whether it's complete.
+
+        The actual value of the logic block is stored in another player
+        variable whose name you can specify via the ``player_variable:``
+        setting in the individual logic block config.
+        '''
+
+        if not player.is_player_var(self.player_state_variable) or not self.config['persist_state']:
+            player[self.player_state_variable] = {
+                "enabled": False,
+                "completed": False
+            }
+            if not self.config['enable_events']:
+                self.enabled = True
+
         if not self.config['events_when_complete']:
             self.config['events_when_complete'] = ['logicblock_' + self.name + '_complete']
 
         if not self.config['events_when_hit']:
             self.config['events_when_hit'] = ['logicblock_' + self.name + '_hit']
+
+    @property
+    def enabled(self):
+        """Return if enabled."""
+        return self.player[self.player_state_variable]["enabled"]
+
+    @enabled.setter
+    def enabled(self, value):
+        """Set enable."""
+        self.player[self.player_state_variable]["enabled"] = value
+
+    @property
+    def completed(self):
+        """Return if completed."""
+        return self.player[self.player_state_variable]["completed"]
+
+    @completed.setter
+    def completed(self, value):
+        """Set if completed."""
+        self.player[self.player_state_variable]["completed"] = value
 
     @property
     @abc.abstractmethod
@@ -172,6 +214,26 @@ class LogicBlock(object):
     def __repr__(self):
         """Return str representation of class."""
         return '<LogicBlock.{}>'.format(self.name)
+
+    def post_update_event(self):
+        """Post an event to notify about changes."""
+        value = self.player[self.config['player_variable']]
+        self.machine.events.post("logicblock_{}_updated".format(self.name), value=value)
+        '''event: logicblock_(name)_updated
+
+        desc: The logic block called "name" has just been completed.
+
+        Note that this is the default completion event for logic blocks, but
+        this can be changed in a logic block's "events_when_complete:" setting,
+        so this might not be the actual event that's posted for all logic
+        blocks in your machine.
+        '''
+
+    def mode_started(self, **kwargs):
+        """Perform actions on mode start."""
+        del kwargs
+
+        self.post_update_event()
 
     def create_control_events(self):
         """Create control events."""
@@ -208,7 +270,6 @@ class LogicBlock(object):
 
     def unload(self):
         """Unload block."""
-        self.disable()
         self._remove_all_event_handlers()
         try:
             self.machine.game.player.logic_blocks.remove(self)
@@ -225,6 +286,7 @@ class LogicBlock(object):
         self.log.debug("Enabling")
         self.enabled = True
         self.add_event_handlers()
+        self.post_update_event()
 
     @abc.abstractmethod
     def add_event_handlers(self):
@@ -237,6 +299,7 @@ class LogicBlock(object):
         raise NotImplementedError("Not implemented")
 
     def _post_hit_events(self, **kwargs):
+        self.post_update_event()
         for event in self.config['events_when_hit']:
             self.machine.events.post(event, **kwargs)
             '''event: logicblock_(name)_hit
@@ -359,6 +422,16 @@ class Counter(LogicBlock):
 
         if not self.config['player_variable']:
             self.config['player_variable'] = self.name + '_count'
+        '''player_var: (logic_block)_count
+
+        desc: The default player variable name that's used to store the count
+        value for a counter player variable. Note that the (logic_block) part of the
+        player variable name is replaced with the actual logic block's name.
+
+        Also note that it's possible to override the player variable name
+        that's used by default and to specify your own name. You do this in the
+        ``player_variable:`` part of the logic block config.
+        '''
 
         self.hit_value = self.config['count_interval']
 
@@ -368,7 +441,7 @@ class Counter(LogicBlock):
             self.hit_value *= -1
 
         if not self.config['persist_state'] or not self.player.is_player_var(self.config['player_variable']):
-            self.player[self.config['player_variable']] = self.config['starting_count']
+            self.player[self.config['player_variable']] = self.config['starting_count'].evaluate([])
 
     def add_event_handlers(self):
         """Add handlers."""
@@ -381,8 +454,7 @@ class Counter(LogicBlock):
     def reset(self, **kwargs):
         """Reset the hit progress towards completion."""
         super().reset(**kwargs)
-        self.player[self.config['player_variable']] = (
-            self.config['starting_count'])
+        self.player[self.config['player_variable']] = self.config['starting_count'].evaluate([])
 
     def hit(self, **kwargs):
         """Increase the hit progress towards completion.
@@ -392,21 +464,33 @@ class Counter(LogicBlock):
         called.
         """
         del kwargs
+        if not self.enabled:
+            return
+
+        count_complete_value = self.config['count_complete_value'].evaluate([]) if self.config['count_complete_value']\
+            is not None else None
+
         if not self.ignore_hits:
             self.player[self.config['player_variable']] += self.hit_value
             self.log.debug("Processing Count change. Total: %s",
                            self.player[self.config['player_variable']])
 
-            self._post_hit_events(count=self.player[self.config['player_variable']])
+            args = {
+                "count": self.player[self.config['player_variable']]
+            }
+            if count_complete_value is not None:
+                args['remaining'] = count_complete_value - self.player[self.config['player_variable']]
 
-            if self.config['count_complete_value'] is not None:
+            self._post_hit_events(**args)
+
+            if count_complete_value is not None:
 
                 if (self.config['direction'] == 'up' and
-                        self.player[self.config['player_variable']] >= self.config['count_complete_value']):
+                        self.player[self.config['player_variable']] >= count_complete_value):
                     self.complete()
 
                 elif (self.config['direction'] == 'down' and
-                        self.player[self.config['player_variable']] <= self.config['count_complete_value']):
+                        self.player[self.config['player_variable']] <= count_complete_value):
                     self.complete()
 
             if self.config['multiple_hit_window']:
@@ -451,6 +535,18 @@ class Accrual(LogicBlock):
         if not self.config['player_variable']:
             self.config['player_variable'] = self.name + '_status'
 
+        '''player_var: (logic_block)_status
+
+        desc: The default player variable name that's used to store the
+        accrual state for an accrual player variable. Note that the (logic_block)
+        part of the player variable name is replaced with the actual logic
+        block's name.
+
+        Also note that it's possible to override the player variable name
+        that's used by default and to specify your own name. You do this in the
+        ``player_variable:`` part of the logic block config.
+        '''
+
         if not self.config['persist_state'] or not self.player[self.config['player_variable']]:
             self.player[self.config['player_variable']] = (
                 [False] * len(self.config['events']))
@@ -485,6 +581,9 @@ class Accrual(LogicBlock):
             step: Integer of the step number (0 indexed) that was just hit.
         """
         del kwargs
+        if not self.enabled:
+            return
+
         self.log.debug("Processing hit for step: %s", step)
         if not self.player[self.config['player_variable']][step]:
             self.player[self.config['player_variable']][step] = True
@@ -521,6 +620,16 @@ class Sequence(LogicBlock):
 
         if not self.config['player_variable']:
             self.config['player_variable'] = self.name + '_step'
+        '''player_var: (logic_block)_step
+
+        desc: The default player variable name that's used to store the
+        current step for a sequence player variable. Note that the (logic_block) part of the
+        player variable name is replaced with the actual logic block's name.
+
+        Also note that it's possible to override the player variable name
+        that's used by default and to specify your own name. You do this in the
+        ``player_variable:`` part of the logic block config.
+        '''
 
         if not self.config['persist_state']:
             self.player[self.config['player_variable']] = 0
@@ -540,6 +649,8 @@ class Sequence(LogicBlock):
         called.
         """
         del kwargs
+        if not self.enabled:
+            return
         self.log.debug("Processing Hit")
         # remove the event handlers for this step
         self.machine.events.remove_handler(self.hit)

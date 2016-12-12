@@ -97,9 +97,6 @@ class Game(Mode):
         self.add_mode_event_handler('ball_ended', self.ball_ended)
         self.add_mode_event_handler('game_ended', self.game_ended)
 
-        self.machine.events.post('enable_volume_keys')
-        # todo
-
         self.machine.events.post_queue('game_starting',
                                        callback=self.game_started, game=self)
         '''event: game_starting
@@ -112,6 +109,9 @@ class Game(Mode):
 
     def mode_stop(self, **kwargs):
         """Stop mode."""
+        for mode in self.machine.modes:
+            if mode.active and not mode.stopping and mode.config['mode']['game_mode']:
+                raise AssertionError("Mode {} is not supposed to run outside of game.".format(mode.name))
         self.machine.game = None
 
     def game_started(self, ev_result=True, **kwargs):
@@ -155,7 +155,7 @@ class Game(Mode):
             This event is typically used to switch the score display from the
             single player layout to the multiplayer layout.'''
 
-    def ball_starting(self):
+    def ball_starting(self, is_extra_ball=False):
         """Called when a new ball is starting.
 
         Note this method is called for each ball that starts, even if it's
@@ -176,13 +176,16 @@ class Game(Mode):
         self.log.debug("***************************************************")
 
         self.machine.events.post_queue('ball_starting',
+                                       balls_remaining=self.machine.config['game']['balls_per_game'] - self.player.ball,
+                                       is_extra_ball=is_extra_ball,
                                        callback=self.ball_started)
         '''event: ball_starting
         desc: A ball is starting. This is a queue event, so the ball won't
         actually start until the queue is cleared.'''
 
-    def ball_started(self, ev_result=True):
+    def ball_started(self, ev_result=True, **kwargs):
         """Ball started."""
+        del kwargs
         self.log.debug("Game Machine Mode ball_started()")
         """Called when the other modules have approved a ball start.
 
@@ -263,12 +266,17 @@ class Game(Mode):
 
         self.log.debug("Entering Game.ball_ending()")
         self.machine.events.post('ball_will_end')
+        '''event: ball_will_end
+        desc: The ball is about to end. This event is posted just before
+        :doc:`ball_ending`.'''
 
         self.machine.events.post_queue('ball_ending',
                                        callback=self._ball_ending_done)
         '''event: ball_ending
         desc: The ball is ending. This is a queue event and the ball won't
-        actually end until the queue is cleared.'''
+        actually end until the queue is cleared.
+
+        This event is posted just after :doc:`ball_will_end`'''
 
     def _ball_ending_done(self, **kwargs):
         # Callback for when the ball_ending queue is clear. All this does is
@@ -277,7 +285,11 @@ class Game(Mode):
         del kwargs
         self.machine.events.post('ball_ended')
         '''event: ball_ended
-        desc: The ball has ended.'''
+        desc: The ball has ended.
+
+        Note that this does not necessarily mean that the next player's turn
+        will start, as this player may have an extra ball which means they'll
+        shoot again.'''
 
     def ball_ended(self, ev_result=True, **kwargs):
         """Called when the ball has successfully ended.
@@ -354,7 +366,7 @@ class Game(Mode):
         """Called when the same player should shoot again."""
         self.log.debug("Awarded extra ball to Player %s. Shoot Again", self.player.index + 1)
         self.player.extra_balls -= 1
-        self.ball_starting()
+        self.ball_starting(is_extra_ball=True)
 
     def request_player_add(self, **kwargs):
         """Called by any module that wants to add a player to an active game.
@@ -405,13 +417,31 @@ class Game(Mode):
             self.log.debug("Request to add player has been denied.")
             return False
         else:
-            player = Player(self.machine, self.player_list)
+            player = Player(self.machine, len(self.player_list))
+            self.player_list.append(player)
             self.num_players = len(self.player_list)
 
             self.machine.create_machine_var(
                 name='player{}_score'.format(player.number),
                 value=player.score,
                 persist=True)
+
+            '''machine_var: player(x)_score
+
+            desc: Holds the numeric value of a player's score. The "x" is the
+            player number, so this actual machine variable is
+            ``player1_score`` or ``player2_score``.
+
+            Since these are machine variables, they are maintained even after
+            a game is over. Therefore you can use these machine variables in
+            your attract mode display show to show the scores of the last game
+            that was played.
+
+            These machine variables are updated at the end of each player's
+            turn, and they persist on disk so they are restored the next time
+            MPF starts up.
+
+            '''
 
             return player
 
@@ -475,6 +505,12 @@ class Game(Mode):
     def _player_turn_started(self, **kwargs):
         del kwargs
         self.player.ball += 1
+        '''player_var: ball
+
+        desc: The ball number for this player. If a player gets an extra ball,
+        this number won't change when they start the extra ball.
+        '''
+
         self.ball_starting()
 
     def player_rotate(self):

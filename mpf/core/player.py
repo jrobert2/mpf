@@ -1,6 +1,8 @@
 """Contains the Player class which represents a player in a pinball game."""
-
+import copy
 import logging
+
+from mpf.core.utility_functions import Util
 
 
 class Player(object):
@@ -57,17 +59,14 @@ class Player(object):
     to track player variable changes.
     """
 
-    def __init__(self, machine, player_list):
+    def __init__(self, machine, index):
         """Initialise player."""
         # use self.__dict__ below since __setattr__ would make these player vars
         self.__dict__['log'] = logging.getLogger("Player")
         self.__dict__['machine'] = machine
         self.__dict__['vars'] = dict()
 
-        player_list.append(self)
-
-        index = len(player_list) - 1
-        number = len(player_list)
+        number = index + 1
 
         self.log.debug("Creating new player: Player %s. (player index '%s')", number, index)
 
@@ -75,7 +74,21 @@ class Player(object):
         # get notification of the new player before they start seeing variable
         # changes for it.
         self.vars['index'] = index
+        '''player_var: index
+
+        desc: The index of this player, starting with 0. For example, Player
+        1 has an index of 0, Player 2 has an index of 1, etc.
+
+        If you want to get the player number, use the "number" player variable
+        instead.
+        '''
+
         self.vars['number'] = number
+        '''player_var: number
+
+        desc: The number of the player, beginning with 1. (e.g. Player 1 has
+        a number of "1", Player 2 is "2", etc.
+        '''
 
         self.machine.events.post('player_add_success', player=self, num=number,
                                  callback=self._player_add_done)
@@ -91,6 +104,17 @@ class Player(object):
         have *num=1*, Player 4 will have *num=4*, etc.)
 
         '''
+        self._load_initial_player_vars()
+
+    def _load_initial_player_vars(self):
+        """Load initial player var values from config."""
+        if 'player_vars' not in self.machine.config:
+            return
+
+        config = self.machine.config['player_vars']
+        for name, element in config.items():
+            element = self.machine.config_validator.validate_config("player_vars", copy.deepcopy(element))
+            self[name] = Util.convert_to_type(element['initial_value'], element['value_type'])
 
     def _player_add_done(self, **kwargs):
         """Set score to 0 for new player.

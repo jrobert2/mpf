@@ -40,8 +40,7 @@ class DropTarget(SystemWideDevice):
         self.machine.events.add_handler('init_phase_4',
                                         self._register_switch_handlers)
 
-        # TODO: make playfield name configurable
-        self.machine.ball_devices['playfield'].ball_search.register(
+        self.config['playfield'].ball_search.register(
             self.config['ball_search_order'], self._ball_search)
 
     def _ball_search_phase1(self):
@@ -113,7 +112,8 @@ class DropTarget(SystemWideDevice):
             # phase3: reset no matter what
             return self._ball_search_phase3()
 
-    def _register_switch_handlers(self):
+    def _register_switch_handlers(self, **kwargs):
+        del kwargs
         # register for notification of switch state
         # this is in addition to the parent since drop targets track
         # self.complete in separately
@@ -131,7 +131,8 @@ class DropTarget(SystemWideDevice):
         if self.knockdown_coil and not self.machine.switch_controller.is_active(self.config['switch'].name):
             self.knockdown_coil.pulse()
 
-    def _update_state_from_switch(self):
+    def _update_state_from_switch(self, **kwargs):
+        del kwargs
         if self._in_ball_search:
             return
 
@@ -145,14 +146,14 @@ class DropTarget(SystemWideDevice):
 
     def _down(self):
         self.complete = True
-        self.machine.events.post('drop_target_' + self.name + '_down')
+        self.machine.events.post('drop_target_' + self.name + '_down', device=self)
         '''event: drop_target_(name)_down
         desc: The drop target with the (name) has just changed to the "down"
         state.'''
 
     def _up(self):
         self.complete = False
-        self.machine.events.post('drop_target_' + self.name + '_up')
+        self.machine.events.post('drop_target_' + self.name + '_up', device=self)
         '''event: drop_target_(name)_up
         desc: The drop target (name) has just changed to the "up" state.'''
 
@@ -214,6 +215,12 @@ class DropTargetBank(SystemWideDevice, ModeDevice):
         self.complete = False
         self.down = 0
         self.up = 0
+        self.delay = DelayManager(machine.delayRegistry)
+
+    @property
+    def can_exist_outside_of_game(self):
+        """Return true if this device can exist outside of a game."""
+        return True
 
     def _initialize(self):
         self.drop_targets = self.config['drop_targets']
@@ -295,6 +302,10 @@ class DropTargetBank(SystemWideDevice, ModeDevice):
         self.complete = True
         if self.debug:
             self.log.debug('All targets are down')
+
+        if self.config['reset_on_complete']:
+            self.debug_log("Reset on complete after %s", self.config['reset_on_complete'])
+            self.delay.add(self.config['reset_on_complete'], self.reset)
 
         self.machine.events.post('drop_target_bank_' + self.name + '_down')
         '''event: drop_target_bank_(name)_down

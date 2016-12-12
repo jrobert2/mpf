@@ -47,6 +47,7 @@ class Mode(object):
         self.mode_stop_kwargs = dict()
         self.mode_devices = set()
         self.start_event_kwargs = None
+        self.stopping = False
 
         self.player = None
         '''Reference to the current player object.'''
@@ -170,6 +171,9 @@ class Mode(object):
         """
         self.log.debug("Received request to start")
 
+        if self.config['mode']['game_mode'] and not self.machine.game:
+            raise AssertionError("Can only start mode {} during a game.".format(self.name))
+
         if self._active:
             self.log.debug("Mode is already active. Aborting start")
             return
@@ -277,6 +281,7 @@ class Mode(object):
         """
         if not self._active:
             return
+        self.stopping = True
 
         self.mode_stop_kwargs = kwargs
 
@@ -297,7 +302,7 @@ class Mode(object):
                                        callback=self._stopped)
         '''event: mode_(name)_stopping
 
-        The mode called "name" is stopping. This is a queue event. The
+        desc: The mode called "name" is stopping. This is a queue event. The
         mode won't actually stop until the queue is cleared.
 
         '''
@@ -307,6 +312,7 @@ class Mode(object):
 
         self.priority = 0
         self.active = False
+        self.stopping = False
 
         for callback in self.machine.mode_controller.stop_methods:
             callback[0](self)
@@ -373,6 +379,10 @@ class Mode(object):
                     # Track that this device was added via this mode so we
                     # can remove it when the mode ends.
                     self.mode_devices.add(device)
+                    if not self.config['mode']['game_mode'] and not device.can_exist_outside_of_game:
+                        raise AssertionError("Device {} cannot exist in non game-mode {}.".format(
+                            device, self.name
+                        ))
 
                     # This lets the device know it was added to a mode
                     device.device_added_to_mode(mode=self,
@@ -408,7 +418,6 @@ class Mode(object):
 
     def _initialise_mode_devices(self):
         """Initialise new devices that are specified in a mode config."""
-
         for collection_name, device_class in iter(self.machine.device_manager.device_classes.items()):
 
             # check if there is config for the device type
@@ -419,21 +428,16 @@ class Mode(object):
 
                 collection = getattr(self.machine, collection_name)
                 device = collection[device]
+                settings = device.prepare_config(settings, True)
+                settings = device.validate_and_parse_config(settings, True)
+
                 if device.config:
                     self.log.debug("Overwrite mode-based device: %s", device)
-                    # TODO: implement this
-                    # 1. check if the device allows this
-                    # 2. validate overload section
-                    self.config[collection_name][device.name] = device.validate_and_parse_config(settings, True)
-                    # 3. load overload
+                    # overload
+                    device.overload_config_in_mode(self, settings)
 
                 else:
                     self.log.debug("Initialising mode-based device: %s", device)
-
-                    # prepare config for mode
-                    settings = device.prepare_config(settings, True)
-                    settings = device.validate_and_parse_config(settings, True)
-
                     # load config
                     device.load_config(settings)
 
@@ -527,11 +531,7 @@ class Mode(object):
 
     def _remove_mode_switch_handlers(self):
         for handler in self.switch_handlers:
-            self.machine.switch_controller.remove_switch_handler(
-                switch_name=handler['switch_name'],
-                callback=handler['callback'],
-                state=handler['state'],
-                ms=handler['ms'])
+            self.machine.switch_controller.remove_switch_handler_by_key(handler)
         self.switch_handlers = list()
 
     def _setup_timers(self):
@@ -546,7 +546,7 @@ class Mode(object):
 
     def _start_timers(self):
         for timer in list(self.timers.values()):
-            if timer.running:
+            if timer.config['start_running']:
                 timer.start()
 
     def _kill_timers(self, ):

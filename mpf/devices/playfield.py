@@ -54,8 +54,8 @@ class Playfield(SystemWideDevice):
                         handler=self._source_device_eject_failed)
                     self.machine.events.add_handler(
                         event='balldevice_' + device.name +
-                        '_ball_eject_attempt',
-                        handler=self._source_device_eject_attempt)
+                        '_ejecting_ball',
+                        handler=self._source_device_ejecting_ball)
                     break
 
         # Watch for balls removed from the playfield
@@ -74,8 +74,8 @@ class Playfield(SystemWideDevice):
                     handler=self._source_device_eject_success)
                 self.machine.events.add_handler(
                     event='balldevice_' + device.name +
-                    '_ball_eject_attempt',
-                    handler=self._source_device_eject_attempt)
+                    '_ejecting_ball',
+                    handler=self._source_device_ejecting_ball)
 
     def add_missing_balls(self, balls):
         """Notifie the playfield that it probably received a ball which went missing elsewhere."""
@@ -293,7 +293,7 @@ class Playfield(SystemWideDevice):
         if target == self:
             self.available_balls -= 1
 
-    def _source_device_eject_attempt(self, balls, target, **kwargs):
+    def _source_device_ejecting_ball(self, balls, target, **kwargs):
         # A source device is attempting to eject a ball. We need to know if it's
         # headed to the playfield.
         del kwargs
@@ -311,7 +311,8 @@ class Playfield(SystemWideDevice):
                            " to the playfield.", balls)
             self.num_balls_requested -= balls
 
-    def _source_device_eject_success(self, balls, target):
+    def _source_device_eject_success(self, balls, target, **kwargs):
+        del kwargs
         # A source device has just confirmed that it has successfully ejected a
         # ball. Note that we don't care what type of confirmation it used.
         # (Playfield switch hit, count of its ball switches, etc.)

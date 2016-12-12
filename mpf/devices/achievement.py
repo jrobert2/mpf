@@ -2,13 +2,15 @@
 from mpf.core.mode import Mode
 from mpf.core.mode_device import ModeDevice
 from mpf.core.player import Player
+from mpf.devices.achievement_group import AchievementGroup
 
 
 class Achievement(ModeDevice):
 
     """An achievement in a pinball machine.
 
-    It is tracked per player and can automatically restore state on the next ball.
+    It is tracked per player and can automatically restore state on the next
+    ball.
     """
 
     config_section = 'achievements'
@@ -21,6 +23,12 @@ class Achievement(ModeDevice):
         self._player = None
         self._mode = None
         self._show = None
+        self._group_memberships = set()
+
+    @property
+    def state(self):
+        """Return current state."""
+        return self._state
 
     @property
     def _state(self):
@@ -28,7 +36,22 @@ class Achievement(ModeDevice):
 
     @_state.setter
     def _state(self, value):
+        self.debug_log('New state: %s', value)
         self._player.achievements[self.name] = value
+
+    def validate_and_parse_config(self, config: dict, is_mode_config: bool) -> dict:
+        """Validate and parse config."""
+        config = super().validate_and_parse_config(config, is_mode_config)
+
+        states = ['disabled', 'enabled', 'started', 'stopped', 'selected',
+                  'completed']
+
+        for state in states:
+            if not config['events_when_{}'.format(state)]:
+                config['events_when_{}'.format(state)] = [
+                    "achievement_{}_state_{}".format(self.name, state)]
+
+        return config
 
     def enable(self, **kwargs):
         """Enable the achievement.
@@ -36,35 +59,39 @@ class Achievement(ModeDevice):
         It can only start if it was enabled before.
         """
         del kwargs
-        if self._state == "disabled":
+        if self._state in ("disabled", "selected", "started"):
             self._state = "enabled"
             self._run_state()
 
     def start(self, **kwargs):
         """Start achievement."""
         del kwargs
-        if self._state == "enabled" or (self.config['restart_after_stop_possible'] and self._state == "stopped"):
+        if self._state in ("enabled", "selected") or (
+            self.config['restart_after_stop_possible'] and
+                self._state == "stopped"):
             self._state = "started"
             self._run_state()
 
     def complete(self, **kwargs):
         """Complete achievement."""
         del kwargs
-        if self._state == "started":
+        if self._state in ("started", "selected"):
             self._state = "completed"
             self._run_state()
 
     def stop(self, **kwargs):
         """Stop achievement."""
         del kwargs
-        if self._state == "started":
+        if self._state in ("started", "selected"):
             self._state = "stopped"
             self._run_state()
 
     def disable(self, **kwargs):
         """Disable achievement."""
         del kwargs
-        if self._state == "enabled" or (self.config['restart_after_stop_possible'] and self._state == "stopped"):
+        if self._state in ("enabled", "selected") or (
+            self.config['restart_after_stop_possible'] and
+                self._state == "stopped"):
             self._state = "disabled"
             self._run_state()
 
@@ -82,14 +109,21 @@ class Achievement(ModeDevice):
 
         self._run_state()
 
+    def select(self, **kwargs):
+        """Highlight (select) this achievement."""
+        del kwargs
+
+        if not self._player:
+            return
+
+        if self._state == 'enabled':
+            self._state = 'selected'
+
+        self._run_state()
+
     def _run_state(self, restore=False):
         """Run shows and post events for current step."""
-        if self.config['events_when_' + self._state]:
-            events = self.config['events_when_' + self._state]
-        else:
-            events = ["achievement_{}_state_{}".format(self.name, self._state)]
-
-        for event in events:
+        for event in self.config['events_when_{}'.format(self._state)]:
             self.machine.events.post(event, restore=restore)
             '''event: achievement_(name)_state_(state)
             desc: Achievement (name) changed to state (state).
@@ -103,15 +137,32 @@ class Achievement(ModeDevice):
 
             '''
 
-        show = self.config['show_when_' + self._state]
         if self._show:
+            self.debug_log('Stopping show: %s', self._show)
             self._show.stop()
             self._show = None
+
+        show = self.config['show_when_' + self._state]
+
         if show:
+            if show not in self.machine.shows:
+                # don't want a "try:" here since it would swallow any errors
+                # in show.play()
+                raise KeyError("[achievements: {}: {}: {}] is not a valid show"
+                               .format(self.name, 'show_when_' + self._state,
+                                       show))
+
+            self.debug_log('Playing show: %s. Priority: %s. Loops: -1. '
+                           'Show tokens: %s', show, self._mode.priority,
+                           self.config['show_tokens'])
+
             self._show = self.machine.shows[show].play(
                 priority=self._mode.priority,
                 loops=-1,
                 show_tokens=self.config['show_tokens'])
+
+        for group in self._group_memberships:
+            group.member_state_changed()
 
     def device_added_to_mode(self, mode: Mode, player: Player):
         """Load device on mode start and restore state.
@@ -132,9 +183,11 @@ class Achievement(ModeDevice):
             self._restore_state()
 
     def _restore_state(self):
-        if self._state == "started" and not self.config['restart_on_next_ball_when_started']:
+        if self._state == "started" and not (
+                self.config['restart_on_next_ball_when_started']):
             self._state = "stopped"
-        elif self._state == "enabled" and not self.config['enable_on_next_ball_when_enabled']:
+        elif self._state == "enabled" and not (
+                self.config['enable_on_next_ball_when_enabled']):
             self._state = "disabled"
 
         self._run_state(restore=True)
@@ -150,3 +203,11 @@ class Achievement(ModeDevice):
         self._mode = None
         if self._show:
             self._show.stop()
+
+    def add_to_group(self, group):
+        assert isinstance(group, AchievementGroup)
+        self._group_memberships.add(group)
+
+    def remove_from_group(self, group):
+        assert isinstance(group, AchievementGroup)
+        self._group_memberships.discard(group)

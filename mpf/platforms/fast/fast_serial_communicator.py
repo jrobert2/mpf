@@ -59,6 +59,7 @@ class FastSerialCommunicator(BaseSerialCommunicator):
 
         self.send_ready = asyncio.Event(loop=platform.machine.clock.loop)
         self.send_ready.set()
+        self.write_task = None
 
         self.received_msg = b''
 
@@ -72,6 +73,15 @@ class FastSerialCommunicator(BaseSerialCommunicator):
         super().stop()
 
     @asyncio.coroutine
+    def _read_with_timeout(self, timeout):
+        msg_raw = yield from asyncio.wait([self.readuntil(b'\r')], timeout=timeout, loop=self.machine.clock.loop)
+        if not msg_raw[0]:
+            msg_raw[1].pop().cancel()
+            return ""
+        element = msg_raw[0].pop()
+        return (yield from element).decode()
+
+    @asyncio.coroutine
     def _identify_connection(self):
         """Identify which processor this serial connection is talking to."""
         # keep looping and wait for an ID response
@@ -80,17 +90,17 @@ class FastSerialCommunicator(BaseSerialCommunicator):
 
         # send enough dummy commands to clear out any buffers on the FAST
         # board that might be waiting for more commands
-        self.writer.write(((' ' * 256) + '\r').encode())
+        self.writer.write(((' ' * 256 * 4) + '\r').encode())
 
         while True:
             self.platform.debug_log("Sending 'ID:' command to port '%s'",
                                     self.port)
             self.writer.write('ID:\r'.encode())
-            msg = (yield from self.readuntil(b'\r')).decode()
+            msg = yield from self._read_with_timeout(.5)
 
             # ignore XX replies here.
             if msg.startswith('XX:'):
-                msg = (yield from self.readuntil(b'\r')).decode()
+                msg = yield from self._read_with_timeout(.5)
 
             if msg.startswith('ID:'):
                 break
@@ -110,6 +120,25 @@ class FastSerialCommunicator(BaseSerialCommunicator):
                                "Board Type: %s, Firmware: %s",
                                self.remote_processor, self.remote_model,
                                self.remote_firmware)
+
+        self.machine.create_machine_var("fast_{}_firmware".format(self.remote_processor.lower()), self.remote_firmware,
+                                        persist=False, silent=True)
+        '''machine_var: fast_(x)_firmware
+
+        desc: Holds the version number of the firmware for the processor on
+        the FAST Pinball controller that's connected. The "x" is replaced with
+        either "dmd", "net", or "rgb", one for each processor that's attached.
+        '''
+
+        self.machine.create_machine_var("fast_{}_model".format(self.remote_processor.lower()), self.remote_model,
+                                        persist=False, silent=True)
+
+        '''machine_var: fast_(x)_model
+
+        desc: Holds the model number of the board for the processor on
+        the FAST Pinball controller that's connected. The "x" is replaced with
+        either "dmd", "net", or "rgb", one for each processor that's attached.
+        '''
 
         if self.remote_processor == 'DMD':
             min_version = DMD_MIN_FW
@@ -238,8 +267,8 @@ class FastSerialCommunicator(BaseSerialCommunicator):
             try:
                 yield from asyncio.wait_for(self.send_ready.wait(), 1.0, loop=self.machine.clock.loop)
             except asyncio.TimeoutError:
-                self.log.warning("Port %s was blocked for more than 1s. Reseting send queue! If this happens frequently"
-                                 "report a bug!", self.port)
+                self.log.warning("Port %s was blocked for more than 1s. Reseting send queue! If this happens "
+                                 "frequently report a bug!", self.port)
                 self.messages_in_flight = 0
 
             self._send(msg)

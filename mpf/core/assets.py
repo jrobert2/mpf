@@ -52,7 +52,12 @@ class BaseAssetManager(MpfController):
 
         # Modes load in init_phase_1, so by 2 we have everything to create
         # the assets.
-        self.machine.events.add_handler('init_phase_3', self._create_assets)
+        if 'force_assets_load' in self.machine.options:
+            force_assets_load = self.machine.options['force_assets_load']
+        else:
+            force_assets_load = False
+        self.machine.events.add_handler('init_phase_3', self._create_assets,
+                                        force_assets_load=force_assets_load)
 
         # Picks up asset load information from connected BCP client(s)
         self.machine.events.add_handler('assets_to_load',
@@ -165,7 +170,12 @@ class BaseAssetManager(MpfController):
 
         asset_class['defaults'] = default_config_dict
 
-    def _create_assets(self):
+    def _create_assets(self, **kwargs):
+        if 'force_assets_load' in kwargs:
+            force_assets_load = kwargs['force_assets_load']
+        else:
+            force_assets_load = False
+
         # Called once on boot to create all the asset objects
         # Create the machine-wide assets
 
@@ -183,12 +193,14 @@ class BaseAssetManager(MpfController):
         for ac in self._asset_classes:
             preload_assets.extend(
                 [x for x in getattr(self.machine, ac['attribute']).values() if
-                 x.config['load'] == 'preload'])
+                 x.config['load'] == 'preload' or force_assets_load])
 
+        wait_for_assets = False
         for asset in preload_assets:
-            asset.load()
+            if not asset.load():
+                wait_for_assets = True
 
-        if not preload_assets:
+        if not wait_for_assets:
             self.machine.clear_boot_hold('assets')
 
     def _create_assets_from_disk(self, config, mode=None):
@@ -454,9 +466,10 @@ class BaseAssetManager(MpfController):
         """Load an asset."""
         raise NotImplementedError("implement")
 
-    def _bcp_client_asset_load(self, total, remaining):
+    def _bcp_client_asset_load(self, total, remaining, **kwargs):
         # Callback for the BCP assets_to_load command which tracks asset
         # loading from a connected BCP client.
+        del kwargs
         self.num_bcp_assets_loaded = int(total) - int(remaining)
         self.num_bcp_assets_to_load = int(total)
         self._post_loading_event()
@@ -657,12 +670,13 @@ class AssetPool(object):
                                             self.assets[index][1])
             self._asset_sequence.rotate(1)
 
-    def load(self, callback=None, priority=None):
+    def load(self, callback=None, priority=None) -> bool:
         """Load pool."""
         if priority is not None:
             self.priority = priority
 
-        self._callbacks.add(callback)
+        if callback:
+            self._callbacks.add(callback)
 
         for asset in self.assets:
             if not asset[0].loaded:
@@ -671,6 +685,9 @@ class AssetPool(object):
 
         if not self.loading_members:
             self._call_callbacks()
+            return True
+
+        return False
 
     def _group_member_loaded(self, asset):
         self.loading_members.discard(asset)
@@ -788,16 +805,20 @@ class Asset(object):
         """Return id."""
         return self._id
 
-    def load(self, callback=None, priority=None):
-        """Start loading the asset."""
+    def load(self, callback=None, priority=None) -> bool:
+        """Start loading the asset.
+
+        Returns True if the asset is already loaded.
+        """
         if priority is not None:
             self.priority = priority
 
-        self._callbacks.add(callback)
+        if callback:
+            self._callbacks.add(callback)
 
         if self.loaded:
             self._call_callbacks()
-            return
+            return True
 
         if self.unloading:
             pass
@@ -805,6 +826,7 @@ class Asset(object):
 
         self.loading = True
         self.machine.asset_manager.load_asset(self)
+        return False
 
     def _call_callbacks(self):
         for callback in self._callbacks:

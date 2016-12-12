@@ -34,7 +34,8 @@ class BallController(object):
         self.machine.events.add_handler('init_phase_2',
                                         self._init2)
 
-    def _init2(self):
+    def _init2(self, **kwargs):
+        del kwargs
         # register a handler for all switches
         for device in self.machine.ball_devices:
             if 'ball_switches' not in device.config:
@@ -129,7 +130,8 @@ class BallController(object):
 
         for playfield in self.machine.playfields:
             if playfield.balls != playfield.available_balls:
-                self.log.warning("Corecting available_balls %s to %s on playfield %s",
+                self.log.warning("Correcting available_balls %s to %s on "
+                                 "playfield %s",
                                  playfield.available_balls, playfield.balls, playfield.name)
                 if playfield.balls > playfield.available_balls:
                     jump_targets.append(playfield)
@@ -138,14 +140,15 @@ class BallController(object):
         for _ in range(min(len(jump_sources), len(jump_targets))):
             source = jump_sources.pop()
             target = jump_targets.pop()
-            self.log.warning("Suspecting that ball jumped from {} to {}".format(str(source), str(target)))
+            self.log.warning("Suspecting that ball jumped from %s to %s", str(source), str(target))
             self.machine.events.post("playfield_jump", source=source, target=target)
 
     def _fix_jumped_balls(self, balls_to_remove, jump_sources):
         balls_removed = 0
         for dummy_i in range(balls_to_remove):
             for playfield in self.machine.playfields:
-                self.log.warning("Corecting balls on pf from %s to %s on playfield %s (preferred)",
+                self.log.warning("Correcting balls on pf from %s to %s on "
+                                 "playfield %s (preferred)",
                                  playfield.balls, playfield.balls - 1, playfield.name)
                 if playfield.available_balls == playfield.balls and playfield.balls > 0:
                     jump_sources.append(playfield)
@@ -161,7 +164,8 @@ class BallController(object):
         balls_removed = 0
         for dummy_i in range(balls_to_remove):
             for playfield in self.machine.playfields:
-                self.log.warning("Corecting balls on pf from %s to %s on playfield %s",
+                self.log.warning("Correcting balls on pf from %s to %s on "
+                                 "playfield %s",
                                  playfield.balls, playfield.balls - 1, playfield.name)
                 if playfield.balls > 0:
                     jump_sources.append(playfield)
@@ -224,10 +228,11 @@ class BallController(object):
 
         return balls
 
-    def _initialize(self):
+    def _initialize(self, **kwargs):
 
         # If there are no ball devices, then the ball controller has no work to
         # do and will create errors, so we just abort.
+        del kwargs
         if not hasattr(self.machine, 'ball_devices'):
             return
 
@@ -237,24 +242,28 @@ class BallController(object):
                                                 '_ball_enter',
                                                 self._ball_drained_handler)
 
-    def request_to_start_game(self):
+    def dump_ball_counts(self):
+        """Dump ball count of all devices."""
+        for device in self.machine.ball_devices:
+            self.log.info("%s contains %s balls. Tags %s", device.name, device.balls, device.tags)
+
+    def request_to_start_game(self, **kwargs):
         """Method registered for the *request_to_start_game* event.
 
         Checks to make sure that the balls are in all the right places and
         returns. If too many balls are missing (based on the config files 'Min
         Balls' setting), it will return False to reject the game start request.
         """
+        del kwargs
         try:
             balls = self._count_balls()
         except ValueError:
             balls = -1
         self.log.debug("Received request to start game.")
-        self.log.debug("Balls contained: %s, Min balls needed: %s",
-                       balls,
-                       self.machine.config['machine']['min_balls'])
         if balls < self.machine.config['machine']['min_balls']:
+            self.dump_ball_counts()
             self.log.warning("BallController denies game start. Not enough "
-                             "balls")
+                             "balls. %s found. %s required", balls, self.machine.config['machine']['min_balls'])
             return False
 
         if self.machine.config['game']['allow_start_with_ball_in_drain']:
@@ -267,6 +276,7 @@ class BallController(object):
 
         elif not self.are_balls_collected(allowed_positions):
             self.collect_balls('home')
+            self.dump_ball_counts()
             self.log.warning("BallController denies game start. Balls are not "
                              "in their home positions.")
             return False
@@ -365,7 +375,10 @@ class BallController(object):
 
             for device in source_devices:
                 if not device.is_playfield():
-                    device.eject_all()
+                    if "drain" in device.tags:
+                        device.eject_all(device.find_next_trough())
+                    else:
+                        device.eject_all()
         else:
             self.log.debug("All balls are collected")
             self._collecting_balls_complete()

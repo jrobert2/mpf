@@ -9,7 +9,7 @@ class TestDeviceManager(MpfTestCase):
     def test_control_events_arguments(self):
         for device_type in self.machine.config['mpf']['device_modules']:
 
-            device_cls = Util.string_to_class("mpf.devices." + device_type)
+            device_cls = Util.string_to_class(device_type)
 
             config_spec = self.machine.config_validator.config_spec[device_cls.config_section]
 
@@ -26,7 +26,7 @@ class TestDeviceManager(MpfTestCase):
                     "Method {}.{} is missing self. Actual signature: {}".format(
                     device_type, method_name, sig))
 
-                self.assertTrue(sig.parameters['kwargs'],
+                self.assertTrue('kwargs' in sig.parameters,
                     "Method {}.{} is missing **kwargs. Actual signature: {}".format(
                     device_type, method_name, sig))
 

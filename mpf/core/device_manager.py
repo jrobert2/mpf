@@ -28,13 +28,16 @@ class DeviceManager(object):
         self.machine.events.add_handler('init_phase_2',
                                         self.create_collection_control_events)
 
-    def _load_device_modules(self):
+    def _load_device_modules(self, **kwargs):
+        del kwargs
         self.log.debug("Loading devices...")
-        self.machine.config['mpf']['device_modules'] = (
-            self.machine.config['mpf']['device_modules'].split(' '))
         for device_type in self.machine.config['mpf']['device_modules']:
+            device_cls = Util.string_to_class(device_type)
 
-            device_cls = Util.string_to_class("mpf.devices." + device_type)
+            if device_cls.get_config_spec():
+                # add specific config spec if device has any
+                self.machine.config_validator.load_device_config_spec(
+                    device_cls.config_section, device_cls.get_config_spec())
 
             collection_name, config = device_cls.get_config_info()
 
@@ -92,7 +95,7 @@ class DeviceManager(object):
         if validate:
             for device_type in self.machine.config['mpf']['device_modules']:
 
-                device_cls = Util.string_to_class("mpf.devices." + device_type)
+                device_cls = Util.string_to_class(device_type)
 
                 collection_name, config_name = device_cls.get_config_info()
 
@@ -110,7 +113,7 @@ class DeviceManager(object):
 
         for device_type in self.machine.config['mpf']['device_modules']:
 
-            device_cls = Util.string_to_class("mpf.devices." + device_type)
+            device_cls = Util.string_to_class(device_type)
 
             collection_name, config_name = device_cls.get_config_info()
 
@@ -129,7 +132,7 @@ class DeviceManager(object):
         """Initialise devices."""
         for device_type in self.machine.config['mpf']['device_modules']:
 
-            device_cls = Util.string_to_class("mpf.devices." + device_type)
+            device_cls = Util.string_to_class(device_type)
 
             collection_name, config_name = device_cls.get_config_info()
 
@@ -178,8 +181,9 @@ class DeviceManager(object):
                                        delay,
                                        self.collections[collection][device])
 
-    def create_machinewide_device_control_events(self):
+    def create_machinewide_device_control_events(self, **kwargs):
         """Create machine wide control events."""
+        del kwargs
         for event, method, delay, _ in (
                 self.get_device_control_events(self.machine.config)):
 
@@ -195,8 +199,9 @@ class DeviceManager(object):
                 ms_delay=delay,
                 delay_mgr=self.machine.delay)
 
-    def create_collection_control_events(self):
+    def create_collection_control_events(self, **kwargs):
         """Create control events for collection."""
+        del kwargs
         for collection, events in iter(self.machine.config['mpf']['device_collection_control_events'].items()):
 
             for event in events:
@@ -206,7 +211,8 @@ class DeviceManager(object):
                                                 collection=collection,
                                                 method=event)
 
-    def _collection_control_event_handler(self, collection, method):
+    def _collection_control_event_handler(self, collection, method, **kwargs):
+        del kwargs
         for device in self.collections[collection]:
             getattr(device, method)()
 

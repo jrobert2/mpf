@@ -9,8 +9,7 @@ from asyncio.selector_events import _SelectorSocketTransport
 import asyncio
 
 from mpf.core.clock import ClockBase
-
-from mpf.pyserial_asyncio.serial_asyncio import SerialTransport
+from serial_asyncio import SerialTransport
 
 
 class NextTimers:
@@ -146,6 +145,9 @@ class MockSerial(MockFd):
         super().__init__()
         self.fd = self
         self.timeout = None
+
+    def reset_input_buffer(self):
+        pass
 
     def nonblocking(self):
         pass

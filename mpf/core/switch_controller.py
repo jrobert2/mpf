@@ -16,6 +16,7 @@ from mpf.core.utility_functions import Util
 from mpf.devices.switch import Switch
 
 MonitoredSwitchChange = namedtuple("MonitoredSwitchChange", ["name", "label", "platform", "num", "state"])
+SwitchHandler = namedtuple("SwitchHandler", ["switch_name", "callback", "state", "ms"])
 
 
 class SwitchController(MpfController):
@@ -26,7 +27,7 @@ class SwitchController(MpfController):
     all switch activity in the machine and converting them into events.
 
     More info:
-    http://docs.missionpinball.org/en/stable/core/switch_controller.html
+    http://docs.missionpinball.org/en/latest/core/switch_controller.html
 
     """
 
@@ -81,7 +82,8 @@ class SwitchController(MpfController):
 
         self.set_state(name, 0, reset_time=True)
 
-    def _initialize_switches(self):
+    def _initialize_switches(self, **kwargs):
+        del kwargs
         self.update_switches_from_hw()
 
         for switch in self.machine.switches:
@@ -414,7 +416,7 @@ class SwitchController(MpfController):
     def _future_done(self, handlers, future):
         del future
         for handler in handlers:
-            self.remove_switch_handler(**handler)
+            self.remove_switch_handler_by_key(handler)
 
     @staticmethod
     def _wait_handler(_future: asyncio.Future, **kwargs):
@@ -448,8 +450,12 @@ class SwitchController(MpfController):
 
         # Do we have any registered handlers for this switch/state combo?
         if switch_key in self.registered_switches:
-            for entry in self.registered_switches[switch_key]:  # generator?
+            for entry in self.registered_switches[switch_key][:]:  # generator?
                 # Found an entry.
+
+                # skip if the handler has been removed in the meantime
+                if entry not in self.registered_switches[switch_key]:
+                    continue
 
                 if entry['ms']:
                     # This entry is for a timed switch, so add it to our
@@ -491,7 +497,7 @@ class SwitchController(MpfController):
 
     # pylint: disable-msg=too-many-arguments
     def add_switch_handler(self, switch_name, callback, state=1, ms=0,
-                           return_info=False, callback_kwargs=None):
+                           return_info=False, callback_kwargs=None) -> SwitchHandler:
         """Register a handler to take action on a switch event.
 
         Args:
@@ -570,10 +576,12 @@ class SwitchController(MpfController):
                     self._add_timed_switch_handler(key, value)
 
         # Return the args we used to setup this handler for easy removal later
-        return {'switch_name': switch_name,
-                'callback': callback,
-                'state': state,
-                'ms': ms}
+        return SwitchHandler(switch_name, callback, state, ms)
+
+    def remove_switch_handler_by_key(self, switch_handler: SwitchHandler):
+        """Remove switch hander by key returned from add_switch_handler."""
+        self.remove_switch_handler(switch_handler.switch_name, switch_handler.callback, switch_handler.state,
+                                   switch_handler.ms)
 
     def remove_switch_handler(self, switch_name, callback, state=1, ms=0):
         """Remove a registered switch handler.
@@ -599,7 +607,7 @@ class SwitchController(MpfController):
                 if entry['switch_action'] == entry_key and entry['ms'] == ms and entry['callback'] == callback:
                     entry['removed'] = True
 
-    def log_active_switches(self):
+    def log_active_switches(self, **kwargs):
         """Write out entries to the log file of all switches that are currently active.
 
         This is used to set the "initial" switch states of standalone testing
@@ -608,6 +616,7 @@ class SwitchController(MpfController):
 
         This method dumps these events with logging level "INFO."
         """
+        del kwargs
         for k, v in self.switches.items():
             if v['state']:
                 self.log.info("Active Switch|%s", k)
@@ -624,7 +633,8 @@ class SwitchController(MpfController):
                 switch.recycle_jitter_count += 1
             return False
 
-    def get_active_event_for_switch(self, switch_name):
+    @staticmethod
+    def get_active_event_for_switch(switch_name):
         """Return the event name which is posted when switch_name becomes active."""
         return "{}_active".format(switch_name)
 
